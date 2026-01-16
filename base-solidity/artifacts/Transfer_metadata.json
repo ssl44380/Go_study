@@ -1,0 +1,64 @@
+{
+	"compiler": {
+		"version": "0.8.31+commit.fd3a2265"
+	},
+	"language": "Solidity",
+	"output": {
+		"abi": [
+			{
+				"inputs": [
+					{
+						"internalType": "address payable",
+						"name": "recipient",
+						"type": "address"
+					},
+					{
+						"internalType": "uint256",
+						"name": "amount",
+						"type": "uint256"
+					}
+				],
+				"name": "transferTo",
+				"outputs": [],
+				"stateMutability": "payable",
+				"type": "function"
+			}
+		],
+		"devdoc": {
+			"kind": "dev",
+			"methods": {},
+			"version": 1
+		},
+		"userdoc": {
+			"kind": "user",
+			"methods": {},
+			"version": 1
+		}
+	},
+	"settings": {
+		"compilationTarget": {
+			"contracts/homework/test.sol": "Transfer"
+		},
+		"evmVersion": "osaka",
+		"libraries": {},
+		"metadata": {
+			"bytecodeHash": "ipfs"
+		},
+		"optimizer": {
+			"enabled": false,
+			"runs": 200
+		},
+		"remappings": []
+	},
+	"sources": {
+		"contracts/homework/test.sol": {
+			"keccak256": "0x397e3e70b672af1d9a6c9af4ad15d7cf03e481694cf3246ebc6291f380923281",
+			"license": "MIT",
+			"urls": [
+				"bzz-raw://58d59a6d2cb50680ba5731e4330b3de395b40cb387d1baa3eb9b90fcbfe0239f",
+				"dweb:/ipfs/QmRXtM61aPwhowjML2NDqZZrkUF6Sk4Wceh1r28rJ1Rkgd"
+			]
+		}
+	},
+	"version": 1
+}
