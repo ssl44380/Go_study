@@ -1,0 +1,68 @@
+{"level":"INFO","time":"2026-01-03 00:01:26","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:02:12","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:12:36","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:13:17","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:15:39","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 00:15:39","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:22:16","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 00:22:16","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:38:52","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:39:31","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 00:39:31","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:44:44","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:46:31","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:48:44","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:50:03","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 00:50:03","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:52:14","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 00:52:14","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:53:43","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 00:59:21","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:02:53","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:04:52","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:12:20","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:13:08","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:15:30","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 01:15:30","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:16:15","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:18:41","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:23:00","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:23:33","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:25:46","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:31:02","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:37:23","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:53:47","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 01:58:53","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 02:01:21","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 02:01:21","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:51:40","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:52:21","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:52:52","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:55:18","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:58:20","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:59:06","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 17:59:21","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 18:00:27","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 18:03:34","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 18:05:32","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 18:10:03","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 19:48:57","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 19:49:30","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 19:49:50","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 19:57:31","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:00:48","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:01:13","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:05:47","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:08:10","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:09:18","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:09:52","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:43:52","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 23:43:52","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:52:36","appname":"[MyBlogApp]","caller":"blog/user.go:26","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 23:52:36","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:53:43","appname":"[MyBlogApp]","caller":"blog/user.go:27","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 23:53:43","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:54:12","appname":"[MyBlogApp]","caller":"blog/user.go:27","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 23:54:12","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}
+{"level":"INFO","time":"2026-01-03 23:58:19","appname":"[MyBlogApp]","caller":"blog/user.go:27","message":"该用户不存在，执行创建"}
+{"level":"INFO","time":"2026-01-03 23:58:19","appname":"[MyBlogApp]","caller":"task04/main.go:14","message":"register table success"}

@@ -1,0 +1,2 @@
+{"level":"ERROR","time":"2026-01-01 01:28:33","appname":"[MyBlogApp]","caller":"task04/main.go:15","message":"register table success","stack":"main.main\n\t/Users/Ssl80443/goStudy/Go_study/task04/main.go:15\nruntime.main\n\t/Users/Ssl80443/go.1.25.4/src/runtime/proc.go:285"}
+{"level":"ERROR","time":"2026-01-01 01:40:42","appname":"[MyBlogApp]","caller":"task04/main.go:15","message":"register table success","stack":"main.main\n\t/Users/Ssl80443/goStudy/Go_study/task04/main.go:15\nruntime.main\n\t/Users/Ssl80443/go.1.25.4/src/runtime/proc.go:285"}
