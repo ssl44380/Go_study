@@ -34,3 +34,4 @@ describe("Counter", function () {
     expect(await counter.x()).to.equal(total);
   });
 });
+

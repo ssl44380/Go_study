@@ -1,20 +1,33 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
-
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 // 创建一个拍卖场，利用初始化函数替代构造函数
-contract MetaNFTAuction is Initializable{
+contract MetaNFTAuction is Initializable,UUPSUpgradeable,OwnableUpgradeable{
     // 创建管理员
     address   admin;
-    uint256 public auctionId;//拍卖品id
-    bool public isTestnet;
+    // 设置拍卖ID
+    uint256 public auctionId = 1;
+
+    // 存储价格喂价地址
+    address public ethUsdFeed;
+    address public usdcUsdFeed;
+    // eth管理接口地址
+    address public constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    // usdc管理接口地址
+    address usdcAddr;
+
+
+
     // 创建拍卖实例
     struct Auction{
         // NFT相关信息
@@ -28,23 +41,29 @@ contract MetaNFTAuction is Initializable{
         uint256 startPriceInDollar;//开始时美元价格
         uint256 duration;//持续时间
         uint256 highestBid;//竞价
-        uint256 highestBidInDollar;//最高竞价美元价格
-        IERC20 paymentToken;//ierc20支付接口
+        uint256 highestBidUSD;//最高竞价美元价格
+        address[] paymentTokens;//ierc20支付接口
     }
     // 设置拍卖品mapping
-    mapping(uint256 =>mapping(address => uint256)) public bids; //拍卖品编号-卖家出款地址-累计出款金额
-    mapping (uint256 =>mapping(address=>uint256 )) public bidMethods;  //拍卖品编号-卖家出款地址-卖家出价方式  0：第一次报价 1：eth 2：代币
-    mapping (uint256=>Auction) public auctions;//拍卖品信息
+    //拍卖品编号-卖家出款地址-累计出款金额美元计价
+    mapping(uint256 =>mapping(address => uint256)) public userUsdAmount; 
+     //拍卖品编号-卖家出款地址-卖家出价方式  0：第一次报价 1：eth 2：代币
+    mapping (uint256 =>mapping(address=>uint256 )) public bidMethods; 
+    // 拍卖ID => 用户 => 支付代币地址 => 该代币总出价（原生数量）
+    mapping(uint256 => mapping(address => mapping(address => uint256))) public userTokenAmount;
+    //拍卖品信息
     mapping(address => bool) public allowedPaymentTokens;
+    mapping (uint256=>Auction) public auctions;
 
     
     // 设置结束时间保护期
-    uint256 public constant SNIPING_PROTECTION = 1800; 
+    uint256 public constant SNIPING_PROTECTION = 100; 
 
     // 事件
     event StartBid(uint256 staringBid);
-    event Bid(address indexed sender,uint256 auctionId,uint256 amount ,uint256 bidMethod);
-    event Withdraw(address indexed  bidder ,uint256 amount);
+    event Bid(uint256 indexed auctionId,address indexed bidder,uint256 amount);
+    // 提取金额paymentMode：0-nft,1-eth,2-usdc
+    event Withdraw(uint256 indexed auctionId,address indexed  bidder,uint256 paymentMode ,uint256 amount);
     event EndBid(uint256 indexed auctionId);
 
     // 设置权限
@@ -52,22 +71,26 @@ contract MetaNFTAuction is Initializable{
         require(msg.sender==admin,"not admin");
         _;
     }
+
     // 初始化
-    constructor(){
-        _disableInitializers();
-    }
-    function initialize(address admin_, bool _isTestnet)external initializer{
+    function initialize(address admin_ ,address ethUsdFeed_, address usdcUsdFeed_,address usdcaddr_)external initializer{
+        __Ownable_init();
+        __UUPSUpgradeable_init();
         if (admin_ == address(0)) revert("Admin cannot be zero");
         admin =admin_;
-        auctionId = 0;
-        isTestnet = _isTestnet;
-
+        ethUsdFeed = ethUsdFeed_;
+        usdcUsdFeed = usdcUsdFeed_;
+        usdcAddr = usdcaddr_;
     }
+
+    // 升级函数
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
 
     function addAllowedPaymentToken(address token) external {
     // 确保只有管理员能添加
     require(msg.sender == admin, "not admin");
-    allowedPaymentTokens[token] = true;
+        allowedPaymentTokens[token] = true;
     }
     // 拍卖开始
     function start(
@@ -76,107 +99,157 @@ contract MetaNFTAuction is Initializable{
         address nft,
         uint256 startPriceInDollar,
         uint256 duration,
-        address paymentToken
+        address[] calldata paymentTokens
 
-    )external  onlyAdmin{
-        require(nft != address(0),"invalid nft");
-        require(duration>=30,"invalid duration");
-        // require(paymentToken!=address(0),"invalid payment token");
+    )external  onlyAdmin returns(uint256){
+        // 1.执行CHECKS校验
+        require(seller != address(0), "invalid seller");
+        require(nft != address(0), "invalid nft");
+        require(duration >= 30, "duration >=30");
+        require(startPriceInDollar > 0, "invalid price");
+        require(paymentTokens.length > 0, "no payment tokens");
+        // 初始化NFT合约
+        IERC721 nftContract = IERC721(nft);
+
+        // 校验NFT归属
+        require(nftContract.ownerOf(nftId) == seller, "not owner");
+            // 校验授权
+        require(
+            nftContract.isApprovedForAll(seller, address(this)) ||
+            nftContract.getApproved(nftId) == address(this),
+            "not approved"
+        );
+
+        // 2.INTERACTIONS 转账NFT
+        nftContract.transferFrom(seller, address(this), nftId);
+
         auctions[auctionId]=Auction({
             isEnded: false,
-            nft: IERC721(nft),
+            nft: nftContract,
             nftId: nftId,
             seller: payable(seller),
             startTime: block.timestamp,
             startPriceInDollar: startPriceInDollar  ,
             duration: duration,
-            paymentToken: IERC20(paymentToken),
+            paymentTokens: paymentTokens,
             highestBid: 0,
             highestBidder: address(0),
-            highestBidInDollar: startPriceInDollar
+            highestBidUSD: startPriceInDollar
         });
+        // 记录开始拍卖事件
         emit StartBid(auctionId);
+        // 记录本次拍卖事件编号
+        uint256 newAuctionId = auctionId;
+        // 拍卖事件自增1
         auctionId++;
+        // 返回本次拍卖事件编号
+        return newAuctionId;
     }
+
     // 用户竞价
     function bid(uint256 auctionId_)external payable {
         Auction storage auction=auctions[auctionId_];
+
+        // 检查
+        require(msg.sender != auction.seller, "Seller cannot bid");
         require(!auction.isEnded, "Auction ended");
-        require(block.timestamp<auction.startTime+auction.duration,"Auction expired");
-        uint256 originalEndTime = auction.startTime + auction.duration;
-        if (block.timestamp+SNIPING_PROTECTION>originalEndTime){
-            auction.duration+=SNIPING_PROTECTION;
-        }
-        uint256 allowance = IERC20(auction.paymentToken).allowance(msg.sender, address(this));
-        require(msg.value > 0 || allowance > 0, "invalid bid");
-        require((msg.value > 0) != (allowance > 0), "only one of ETH or token");
 
-        uint256 bidMethod;
-        if (msg.value > 0) {
-            bidMethod = 1; // ETH支付
-        } else {
-            bidMethod = 2; // 代币支付
-        }
+        
+        // 区块时间<=开始时间加+持续时间
+        uint256 endTime = auction.startTime + auction.duration;
+        require(block.timestamp < endTime, "Auction expired");
 
-        if (bidMethods[auctionId_][msg.sender] == 0) {
-            bidMethods[auctionId_][msg.sender] = bidMethod;
-        } else {
-            require(bidMethods[auctionId_][msg.sender] == bidMethod, "cannot change payment method");
+        // 自动识别代币
+        address paymentToken = msg.value > 0 ? NATIVE_TOKEN : usdcAddr;
+        require(_isPaymentTokenSupported(auctionId_, paymentToken), "Payment token not supported");
+
+        // 防止被狙击：最后 N 秒自动延长时间
+        if (block.timestamp + SNIPING_PROTECTION > endTime) {
+            auction.duration += SNIPING_PROTECTION;
         }
 
-        if (bidMethod == 1) {
-            uint256 price = getPriceInDollar(1);
-            uint256 totalEthBid = bids[auctionId_][msg.sender] + msg.value;
+        // 读取关键数据
+        uint256 highestBidUSD = auction.highestBidUSD;
+        uint256 minBidUSD = highestBidUSD + 1;
+        uint256 userOldUsd = userUsdAmount[auctionId_][msg.sender];
 
-            uint256 bidPrice=_toUsd(totalEthBid,18,price);
-            require(bidPrice>auction.highestBidInDollar,"bid too low");
-            auction.highestBidInDollar=bidPrice;   
+        if (paymentToken == NATIVE_TOKEN) {
+            require(msg.value > 0, "ETH must be sent");
             
-            auction.highestBid=msg.value;
-            auction.highestBidder=msg.sender;
+            uint256 ethPrice = getPriceInDollar(1);
+            uint256 newEthToUsd = _toUsd(msg.value, 18, ethPrice);
+            uint256 newUsd = userOldUsd + newEthToUsd;
 
-        } else {
-            uint256 price = getPriceInDollar(bidMethod);
-            uint8 tokenDecimals = IERC20Metadata(address(auction.paymentToken)).decimals();
-            uint256 bidPrice=_toUsd(bids[auctionId_][msg.sender]+msg.value,tokenDecimals,price);
-            require(bidPrice>=auction.highestBidInDollar,"bid too low");
-            auction.highestBidInDollar=bidPrice;             
-            auction.highestBid=allowance;
-            IERC20(address(auction.paymentToken)).transferFrom(msg.sender, address(this), allowance);
-            auction.highestBidder=msg.sender;
+            require(newUsd > minBidUSD, "Bid too low");
+
+            // EFFECTS：先修改状态（安全）
+            userUsdAmount[auctionId_][msg.sender] = newUsd;
+            userTokenAmount[auctionId_][msg.sender][NATIVE_TOKEN] += msg.value;
+            auction.highestBidUSD = newUsd;
+        }else {
+            uint256 needUsd = minBidUSD - userOldUsd;
+            uint256 needUsdc = _usdToToken(paymentToken, needUsd, 1e8, 6) ;
+            uint256 transferUsdcAmount = needUsdc * 1e6;
+            IERC20 token = IERC20(paymentToken);
+            require(token.allowance(msg.sender, address(this)) >= needUsdc, "Allowance too low");
             
+            // INTERACTIONS：转账
+            token.transferFrom(msg.sender, address(this), transferUsdcAmount);
+
+            // EFFECTS：更新状态
+            userUsdAmount[auctionId_][msg.sender] = minBidUSD;
+            userTokenAmount[auctionId_][msg.sender][paymentToken] += transferUsdcAmount;
+            auction.highestBidUSD = minBidUSD;
         }
-        bids[auctionId_][auction.highestBidder]=auction.highestBid;
-        emit Bid(auction.highestBidder,auctionId_,auction.highestBid,bidMethod);
+        auction.highestBidder = msg.sender;
+        emit Bid(auctionId_, msg.sender, auction.highestBidUSD);
     }
+
     // 拍卖结束
     function end(uint256 auctionId_)external onlyAdmin{
         Auction storage auction=auctions[auctionId_];
         // 基础校验：拍卖未结束，已到结束时间
         require(!auction.isEnded,"Auction ended");
-        require(block.timestamp>=auction.startTime+auction.duration,"Auction expired");
+        require(block.timestamp>=auction.startTime+auction.duration,"Auction not expired");
         // 标记拍卖结束
         auction.isEnded=true;
-        // 拍卖结束后，将拍卖品转给最高出价者，将款项转给卖方
-        if(auction.highestBidder!=address(0)){
-            uint256 amount = auction.highestBid;
-            auction.highestBid = 0;
-            bids[auctionId_][auction.highestBidder]=0;
-            if(bidMethods[auctionId_][auction.highestBidder]==1){
-                
-                (bool success,)=payable(auction.seller).call{value:amount}("");
-                require(success,"ETH withdraw failed"); 
-
-            }else{
-                IERC20(address(auction.paymentToken)).transferFrom(address(this), auction.seller, amount);
-            }   
-
-            IERC721(auction.nft).transferFrom(auction.seller, auction.highestBidder, auction.nftId); 
-            emit Withdraw(auction.highestBidder,auction.nftId);
-            emit Withdraw(auction.seller ,amount);
-        }else {
-            IERC721(auction.nft).transferFrom(auction.seller, auction.seller, auction.nftId);
-            emit Withdraw(auction.seller ,auction.nftId);
+        // 获取拍卖信息
+        address seller = auction.seller;
+        address winner = auction.highestBidder;
+        uint256 nftId = auction.nftId;
+        IERC721 nft = auction.nft;
+        // 拍卖结束后：
+        // 1、如果无人竞拍，将拍卖品转给卖家
+        // 2、如果将拍卖品转给最高出价者，将款项转给卖方
+        if(winner==address(0)){
+                auction.nft.transferFrom(address(this), seller, nftId);
+                emit Withdraw(auctionId_,seller,1,nftId);
+        }else{
+            // 将nft转给最高价地址
+            nft.transferFrom(address(this), winner, nftId);
+            emit Withdraw(auctionId_,winner,0,nftId);
+            // 将买方支付的eth和usdc转移给卖方
+            // 查询余额
+            uint256 payEth=userTokenAmount[auctionId_][winner][NATIVE_TOKEN];
+            uint256 payUsdc=userTokenAmount[auctionId_][winner][usdcAddr];
+            // 清零余额记录数据
+            userTokenAmount[auctionId_][winner][NATIVE_TOKEN] = 0;
+            userTokenAmount[auctionId_][winner][usdcAddr] = 0; 
+            if (payEth > 0) {
+                // 查余额大于等于支付额度
+                require(address(this).balance >= payEth, "Insufficient ETH in contract");
+                // 执行转账
+                (bool success, ) = seller.call{value: payEth}("");
+                require(success, "ETH transfer failed");
+                // 记录提取事件
+                emit Withdraw(auctionId_,seller,1,payEth);
+            }
+            if (payUsdc > 0) {
+            require(IERC20(usdcAddr).balanceOf(address(this)) >= payUsdc, "Insufficient USDC");
+            bool usdcSuccess = IERC20(usdcAddr).transfer(seller, payUsdc);
+            require(usdcSuccess, "USDC transfer failed");
+            emit Withdraw(auctionId_,seller,2,payUsdc);
+            }
         }
 
         emit EndBid(auctionId_);
@@ -184,66 +257,77 @@ contract MetaNFTAuction is Initializable{
     }
     // 剩余用户退款
     function withdraw(uint256 auctionId_)external {
-        
-        uint256 amount=bids[auctionId_][msg.sender];
-        require(amount!=0,"zero balance");
         Auction storage auction=auctions[auctionId_];
         // 拍卖结束
         require(auction.isEnded,"Auction not ended");
-
-
-        // 拍卖结束后，参与拍卖者提现
-        bids[auctionId_][msg.sender]==0;
-        if(bidMethods[auctionId_][msg.sender]==1){
-            
-            (bool success,)=payable(msg.sender).call{value:amount}("");
-            require(success,"ETH withdraw failed"); 
-
-        }else{
-            IERC20(address(auction.paymentToken)).transferFrom(address(this), msg.sender, amount);
-        }   
-
-        emit Withdraw(msg.sender ,amount);
-
-
+        uint256 payEth=userTokenAmount[auctionId_][msg.sender][NATIVE_TOKEN];
+        uint256 payUsdc=userTokenAmount[auctionId_][msg.sender][usdcAddr];
+        require(!(payEth == 0 && payUsdc ==0),"ETH && USDC balance zero");
+        userTokenAmount[auctionId_][msg.sender][NATIVE_TOKEN] = 0;
+        userTokenAmount[auctionId_][msg.sender][usdcAddr] = 0;
+        if (payEth > 0) {
+            require(address(this).balance >= payEth, "Insufficient ETH in contract");
+            (bool success, ) = msg.sender.call{value: payEth}("");
+            require(success, "ETH transfer failed");
+            emit Withdraw(auctionId_,msg.sender,1,payEth);
+        }
+        if (payUsdc > 0) {
+            require(IERC20(usdcAddr).balanceOf(address(this)) >= payUsdc, "Insufficient USDC");
+            bool usdcSuccess = IERC20(usdcAddr).transfer(msg.sender, payUsdc);
+            require(usdcSuccess, "USDC transfer failed");
+            emit Withdraw(auctionId_,msg.sender,2,payUsdc);
+        }
     }
 
-    // 获取比价信息
+    // 检查拍卖是否支持该支付方式（ETH 或 USDC）
+    function _isPaymentTokenSupported(uint256 auctionId_, address paymentToken) internal view returns (bool) {
+        Auction storage auction = auctions[auctionId_];
+        address[] memory supportedTokens = auction.paymentTokens;
+        for (uint i = 0; i < supportedTokens.length; i++) {
+            if (supportedTokens[i] == paymentToken) {
+                return true;
+            }
+        }
+        return false;
+    }
 
-    function getPriceInDollar(uint256 bidMethod)public view returns(uint256){
-        if (isTestnet) {
+    // 获取美元兑换比例信息
+
+    function getPriceInDollar(uint256 bidMethod) public view returns (uint256) {
+        AggregatorV3Interface priceFeed;
+
         if (bidMethod == 1) {
-            return 3000 * 1e8; // 模拟 ETH/USD 汇率（3000，适配Chainlink的8位小数）
+            priceFeed = AggregatorV3Interface(ethUsdFeed);
         } else if (bidMethod == 2) {
-            return 2000 * 1e8; // 模拟其他汇率
+            priceFeed = AggregatorV3Interface(usdcUsdFeed);
         } else {
             revert("Invalid bid method");
         }
-    }
 
-        AggregatorV3Interface priceFeed;
-        if(bidMethod==1){
-            priceFeed=AggregatorV3Interface(0x694AA1769357215DE4FAC081bf1f309aDC325306);
-        }else if (bidMethod==2){
-            priceFeed = AggregatorV3Interface(0xA2F78ab2355fe2f984D808B5CeE7FD0A93D5270E);
-        }else {
-            revert("Invalid bid method");
-        }
-        (
-            ,
-            int256 price,
-            ,
-            uint256 updatedAt,
-            
-        ) = priceFeed.latestRoundData();
-        require(price > 0, "Invalid ETH price");
-        require(updatedAt > block.timestamp - 3600, "ETH price feed stale");
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        require(price > 0, "Invalid price");
+
         return uint256(price);
     }
 
-    function _toUsd(uint256 amount,uint8 decimals,uint256 price )internal pure returns (uint256){
-        uint256 amount18=amount * 10 **(18-decimals);
-        return (amount18 * price ) /10 **18;
+    function _toUsd(uint256 amount,uint8 decimals,uint256 price )public pure returns (uint256){
+        // uint256 amount18=amount * 10 **(18-decimals);
+        // return (amount18 * price ) /10 **8;
+         return (amount * price) / (10 ** decimals) / 1e8;
+    }
+
+    function _usdToToken(
+        address token,
+        uint256 usdAmount,
+        uint256 price,
+        uint8 decimals
+    ) internal pure returns (uint256) {
+        if (token == NATIVE_TOKEN) {
+            return (usdAmount * (10 ** decimals)) / price;
+        } else {
+            // ✅ USDC 1:1 正确转换
+            return usdAmount;
+        }
     }
 
     function getVersion()public pure virtual returns(string memory){

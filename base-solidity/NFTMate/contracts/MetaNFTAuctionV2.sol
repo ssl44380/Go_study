@@ -4,13 +4,13 @@ pragma solidity ^0.8.22;
 import "./MetaNFTAuction.sol";
 
 
-contract NFTAuctionV2 is MetaNFTAuction{
+contract MetaNFTAuctionV2 is MetaNFTAuction{
     function testHello()public pure returns(string memory){
         return "Hello, World!";
     }
 
     function getVersion()public pure override returns(string memory){
-        return "MetaNFTAuctionV1";
+        return "MetaNFTAuctionV2";
     }
 
 }

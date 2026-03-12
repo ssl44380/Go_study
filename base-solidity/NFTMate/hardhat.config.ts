@@ -1,5 +1,6 @@
 import hardhatToolboxMochaEthersPlugin from "@nomicfoundation/hardhat-toolbox-mocha-ethers";
 import { configVariable, defineConfig } from "hardhat/config";
+// import "@openzeppelin/hardhat-upgrades"; 
 import dotenv from "dotenv";
 dotenv.config({ path: "./.env" }); 
 
@@ -36,5 +37,6 @@ export default defineConfig({
       url: configVariable("SEPOLIA_RPC_URL"),
       accounts: [configVariable("SEPOLIA_PRIVATE_KEY")],
     },
+
   },
 });
