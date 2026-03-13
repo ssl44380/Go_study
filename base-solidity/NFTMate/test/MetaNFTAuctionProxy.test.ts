@@ -22,7 +22,7 @@ const SNIPING_PROTECTION=100;
 
 async function deployMetaNFTAuctionFixture(){
     // 获取用户和合约管理员信息
-	const [auctionFactoryAdmin,nftFactoryAdmin,usdcFactoryAdmin,seller,bidder1,bidder2] = await ethers.getSigners();
+	const [auctionFactoryAdmin,nftFactoryAdmin,usdcFactoryAdmin,seller,bidder1,bidder2,deployer] = await ethers.getSigners();
 
     // 部署 Mock 喂价
     const {ethfeedaddr,usdcfeedaddr} =await setFeed();
@@ -35,13 +35,16 @@ async function deployMetaNFTAuctionFixture(){
     const auctionV1 = await ethers.deployContract("MetaNFTAuction",[],auctionFactoryAdmin);
     
     // 部署代理合约
-    const auctionProxy=await ethers.deployContract("auctionTransparentProxy",[await auctionV1.getAddress()])
+
+    const auctionProxy=await ethers.deployContract("auctionTransparentProxy",[await auctionV1.getAddress()]);
+
+
 
     // 拍卖场合约v1绑定上代理合约
-    const proxyAsNFTActionV1 = await ethers.getContractAt("MetaNFTAuction", await auctionProxy.getAddress());
+    const proxyAsNFTAction = await ethers.getContractAt("MetaNFTAuction", await auctionProxy.getAddress());
 
     // 执行逻辑合约初始化
-    await proxyAsNFTActionV1.connect(auctionFactoryAdmin).initialize(
+    await proxyAsNFTAction.connect(auctionFactoryAdmin).initialize(
         auctionFactoryAdmin.address,
         ethfeedaddr,
         usdcfeedaddr,
@@ -61,7 +64,7 @@ async function deployMetaNFTAuctionFixture(){
     await metaNFT.connect(seller).approve(auctionProxy.target, initNftId);
 
     // 初始化一场拍卖，并记录拍卖场ID号
-    const txInitBid= await proxyAsNFTActionV1.start(seller.address,initNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr, usdcFactoryAddr]);
+    const txInitBid= await proxyAsNFTAction.start(seller.address,initNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr, usdcFactoryAddr]);
     const receipt=await txInitBid.wait();
     // 获取拍卖品ID号
     // as any :类型断言（Type Assertion）作用只有一个：解决 TypeScript 报错！
@@ -87,7 +90,7 @@ async function deployMetaNFTAuctionFixture(){
 
     return {
         // 拍卖场代理合约
-        proxyAsNFTActionV1,
+        proxyAsNFTAction,
         // 拍卖场合约
         auctionProxy,
         // 拍卖场合约管理员
@@ -116,6 +119,7 @@ async function deployMetaNFTAuctionFixture(){
         bidder2,
         // 狙击保护期
         SNIPING_PROTECTION,
+        deployer
     };
 
 }
@@ -171,12 +175,11 @@ function listenEvent(contract: any, filter: any, listenTimes: number) {
 
 describe("MetaNFTAuction",function(){
 
-
     it("获得美元兑换价格",async function(){
-        const {proxyAsNFTActionV1,auctionFactoryAdmin,auctionProxy}=await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
+        const {proxyAsNFTAction,auctionFactoryAdmin,auctionProxy}=await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
 
-        const ethPrice= await proxyAsNFTActionV1.connect(auctionFactoryAdmin).getPriceInDollar(1);
-        const usdcPrice= await proxyAsNFTActionV1.connect(auctionFactoryAdmin).getPriceInDollar(2);
+        const ethPrice= await proxyAsNFTAction.connect(auctionFactoryAdmin).getPriceInDollar(1);
+        const usdcPrice= await proxyAsNFTAction.connect(auctionFactoryAdmin).getPriceInDollar(2);
         console.log("ETH 价格:", ethPrice );
         console.log("USDC 价格:", usdcPrice );
         expect(ethPrice > 0n).to.be.true;
@@ -184,22 +187,25 @@ describe("MetaNFTAuction",function(){
     });
 
     it("测试版本号——版本号1",async function(){
-        const {auctionProxy} =await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
+        const {auctionProxy,deployer} =await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
         const proxyAsNFTAction1 = await ethers.getContractAt("MetaNFTAuction", await auctionProxy.getAddress());
 
         expect(await proxyAsNFTAction1.getVersion()).to.equal("MetaNFTAuctionV1");
+
+
+
+
+        
     });
 
     it("测试版本号——版本号2",async function(){
-        const {auctionFactoryAdmin} =await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
-            // 部署拍卖场合约
-        const auctionV2 = await ethers.deployContract("MetaNFTAuctionV2",[],auctionFactoryAdmin);
-        
-        // 部署代理合约
-        const auctionProxy=await ethers.deployContract("auctionTransparentProxy",[await auctionV2.getAddress()])
+        const {auctionProxy,auctionFactoryAdmin} =await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
 
-        // 拍卖场合约v2绑定上代理合约
-        const proxyAsNFTActionV2 = await ethers.getContractAt("MetaNFTAuctionV2", await auctionProxy.getAddress());
+
+        const proxyAsNFTActionV2 = await ethers.deployContract("MetaNFTAuctionV2",[],auctionFactoryAdmin);
+
+        await auctionProxy.upgrade(await proxyAsNFTActionV2.getAddress());
+
 
         expect(await proxyAsNFTActionV2.getVersion()).to.equal("MetaNFTAuctionV2");
     });

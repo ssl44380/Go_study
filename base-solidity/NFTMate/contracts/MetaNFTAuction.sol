@@ -12,7 +12,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 // 创建一个拍卖场，利用初始化函数替代构造函数
-contract MetaNFTAuction is Initializable,UUPSUpgradeable,OwnableUpgradeable{
+contract MetaNFTAuction is Initializable{
     // 创建管理员
     address   admin;
     // 设置拍卖ID
@@ -74,8 +74,7 @@ contract MetaNFTAuction is Initializable,UUPSUpgradeable,OwnableUpgradeable{
 
     // 初始化
     function initialize(address admin_ ,address ethUsdFeed_, address usdcUsdFeed_,address usdcaddr_)external initializer{
-        __Ownable_init();
-        __UUPSUpgradeable_init();
+
         if (admin_ == address(0)) revert("Admin cannot be zero");
         admin =admin_;
         ethUsdFeed = ethUsdFeed_;
@@ -85,7 +84,7 @@ contract MetaNFTAuction is Initializable,UUPSUpgradeable,OwnableUpgradeable{
 
     // 升级函数
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
+    // function _authorizeUpgrade(address newImplementation) internal override onlyAdmin {}
 
     function addAllowedPaymentToken(address token) external {
     // 确保只有管理员能添加

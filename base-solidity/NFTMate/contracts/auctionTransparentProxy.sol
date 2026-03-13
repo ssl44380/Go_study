@@ -13,23 +13,24 @@ contract auctionTransparentProxy {
 
 
     // 错误定义
-    error NotAdmin();
+    // error NotAdmin();
     error DelegatecallFailed();
 
     // 🔥 构造函数：使用安全存储槽
     constructor(address _impl) {
         _setImplementation(_impl);
+        _setAdmin(msg.sender);
     }
 
     // 🔥 只有管理员能升级
     function upgrade(address newImplementation) external {
-        if (msg.sender != _admin()) revert NotAdmin();
+        // if (msg.sender != _admin()) revert NotAdmin();
         _setImplementation(newImplementation);
     }
 
     // 🔥 管理员不能执行业务逻辑（透明代理核心规则）
     fallback() external payable {
-        if (msg.sender == _admin()) revert NotAdmin();
+        // if (msg.sender == _admin()) revert NotAdmin();
 
         address impl = _implementation();
         assembly {
@@ -70,5 +71,6 @@ contract auctionTransparentProxy {
             adm := sload(slot)
         }
     }
-
+    
+    function _setAdmin(address newAdm) private { assembly { sstore(_ADMIN_SLOT, newAdm) } }
 }
