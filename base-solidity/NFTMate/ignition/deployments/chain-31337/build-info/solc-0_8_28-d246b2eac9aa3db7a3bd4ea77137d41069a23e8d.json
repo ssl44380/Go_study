@@ -1,0 +1,44 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-d246b2eac9aa3db7a3bd4ea77137d41069a23e8d",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "userSourceNameMap": {
+    "contracts/mock/MockV3Aggregator.sol": "project/contracts/mock/MockV3Aggregator.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode",
+            "evm.deployedBytecode",
+            "evm.methodIdentifiers",
+            "metadata"
+          ]
+        }
+      },
+      "remappings": [
+        "project/:@chainlink/contracts/=npm/@chainlink/contracts@1.5.0/"
+      ]
+    },
+    "sources": {
+      "npm/@chainlink/contracts@1.5.0/src/v0.8/shared/interfaces/AggregatorV3Interface.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\n// solhint-disable-next-line interface-starts-with-i\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(\n    uint80 _roundId\n  ) external view returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n\n  function latestRoundData()\n    external\n    view\n    returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);\n}\n"
+      },
+      "project/contracts/mock/MockV3Aggregator.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol\";\n\ncontract MockV3Aggregator is AggregatorV3Interface {\n    uint8 public decimals;\n    int256 private _answer;\n\n    constructor(uint8 decimals_, int256 answer_) {\n        decimals = decimals_;\n        _answer = answer_;\n    }\n\n    function latestRoundData() external view override returns (\n        uint80,\n        int256,\n        uint256,\n        uint256,\n        uint80\n    ) {\n        return (0, _answer, 0, 0, 0);\n    }\n\n    function getRoundData(uint80) external pure override returns (\n        uint80, int256, uint256, uint256, uint80\n    ) {\n        return (0, 0, 0, 0, 0);\n    }\n\n    function description() external pure override returns (string memory) {\n        return \"Mock Feed\";\n    }\n\n    // function decimals()  external view override returns (uint8) {\n    //     return decimals;\n    // }\n\n    function version() external pure override returns (uint256) {\n        return 1;\n    }\n}\n\n\n\n\n\n"
+      }
+    }
+  }
+}

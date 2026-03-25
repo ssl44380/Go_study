@@ -3,8 +3,8 @@ import hre from "hardhat";
 
 
 // 导入模块
-import proxyModule from "../ignition/modules/ProxyModule.js";
-import UpgradeModule from "../ignition/modules/UpgradeModule.js";
+import UUPSModule from "../ignition/modules/UUPSModule.js";
+// import UpgradeModule from "../ignition/modules/UpgradeModuleUups.js";
 
 
 // 连接网络
@@ -46,10 +46,10 @@ async function deployMetaNFTAuctionFixture(){
 
 
     // 获取部署后的合约信息
-    const deployed =await ignition.deploy(proxyModule);
-    auction=await ethers.getContractAt("MetaNFTAuction",deployed.auction,deployer);
+    const deployed =await ignition.deploy(UUPSModule);
+    auction=await ethers.getContractAt("MetaNFTAuctionUups",deployed.proxy.target,deployer);
     usdcFactoryAddr=await ethers.getContractAt("MetaUSDC",deployed.usdcFactory,deployer);
-    metaNFT=await ethers.getContractAt("MetaNFT",deployed.metaNFT,nftFactoryAdmin);
+    metaNFT = await ethers.getContractAt("MetaNFT",deployed.metaNFT,nftFactoryAdmin);
 
 
 
@@ -98,6 +98,7 @@ async function deployMetaNFTAuctionFixture(){
     await usdcFactoryAddr.connect(deployer).mint(bidder2.address,ethers.parseUnits("1000", 6))
 
     return {
+        proxy:deployed.proxy,
         // 拍卖场合约
         auction ,
         // 拍卖场合约管理员
@@ -126,6 +127,8 @@ async function deployMetaNFTAuctionFixture(){
         bidder2,
         // 狙击保护期
         SNIPING_PROTECTION,
+        // 代理合约
+        proxyImpl:deployed.proxy,
     };
 
 }
@@ -193,10 +196,18 @@ describe("MetaNFTAuction",function(){
     })
 
     it("测试升级后版本为v2",async function () {
-        const { auctionV2 } = await ignition.deploy(UpgradeModule);        
-        expect(await auctionV2.getVersion()).to.equal("MetaNFTAuctionV2");
+        // 获取旧逻辑合约地址
+        const {auction,auctionFactoryAdmin} =await networkHelpers.loadFixture(deployMetaNFTAuctionFixture)
+        // 部署新的逻辑地址
+        const auctionV2=await ethers.deployContract("MetaNFTAuctionUupsV2");
+        // 使用旧函数调用升级逻辑
+        await auction.connect(auctionFactoryAdmin).upgradeTo(auctionV2.target)
+
+        expect(await auction.getVersion()).to.equal("MetaNFTAuctionV2");
 
     })
+    
+
 
 
     it("获得美元兑换价格",async function(){

@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MetaNFT is ERC721,Ownable {
     uint256 public nftId;
-    constructor() ERC721("MetaNFT", "MFT") Ownable() {
+    constructor() ERC721("MetaNFT", "MFT") Ownable(msg.sender) {
         nftId=1;
     }
 
