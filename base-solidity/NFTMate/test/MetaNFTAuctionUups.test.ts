@@ -245,7 +245,7 @@ describe("MetaNFTAuction",function(){
         // await metaNFT.connect(seller).setApprovalForAll(auction.target, true)
         // 只授权 【单个指定 NFT】
         await metaNFT.connect(seller).approve(auction.target, newNftId);
-        await expect(auction.connect(auctionFactoryAdmin).start(seller.address,newNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr,usdcFactoryAddr])).not.to.be.rejected;
+        await expect(auction.connect(auctionFactoryAdmin).start(seller.address,newNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr,usdcFactoryAddr])).not.to.be.revert;
     });
 
     it("测试非管理员不能开始拍卖",async function(){
@@ -258,7 +258,7 @@ describe("MetaNFTAuction",function(){
         // await metaNFT.connect(seller).setApprovalForAll(auction.target, true)
         // 只授权 【单个指定 NFT】
         await metaNFT.connect(seller).approve(auction.target, newNftId);
-        await expect(auction.connect(seller).start(seller.address,newNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr,usdcFactoryAddr])).to.be.rejectedWith('not admin');
+        await expect(auction.connect(seller).start(seller.address,newNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr,usdcFactoryAddr])).to.be.revertedWith('not admin');
     });
 
     it("测试拍卖品编号自增",async function(){
@@ -272,7 +272,7 @@ describe("MetaNFTAuction",function(){
         const newNftId = await metaNFT.nftId() - 1n;
         // 只授权 【单个指定 NFT】
         await metaNFT.connect(seller).approve(auction.target, newNftId);
-        await expect(auction.connect(auctionFactoryAdmin).start(seller.address,newNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr,usdcFactoryAddr])).not.to.be.rejected;
+        await expect(auction.connect(auctionFactoryAdmin).start(seller.address,newNftId,metaNFT,startPriceInDollar,duration,[ethFactoryAddr,usdcFactoryAddr])).not.to.be.revert;
         const afterId=await auction.auctionId();
         await expect(afterId).to.equal(beforeId+1n);
     });
@@ -297,7 +297,7 @@ describe("MetaNFTAuction",function(){
             auction.connect(bidder1).bid(initAuctionId, {
             value: ethers.parseEther("0.1"),
             })
-        ).to.be.rejectedWith("Auction expired");
+        ).to.be.revertedWith("Auction expired");
 
     });
 
@@ -331,7 +331,7 @@ describe("MetaNFTAuction",function(){
                 auction.connect(bidder1).bid(initAuctionId, {
                 value: newEthBidAmount,
                 })
-            ).not.to.be.rejectedWith("Bid too low");
+            ).not.to.be.revertedWith("Bid too low");
         }
     });
 
@@ -417,13 +417,13 @@ describe("MetaNFTAuction",function(){
         // 买家1再次执行提款操作失败
         await expect(
         auction.connect(bidder1).withdraw(initAuctionId)
-        ).to.be.rejectedWith("ETH && USDC balance zero");
+        ).to.be.revertedWith("ETH && USDC balance zero");
 
     });
 
     it("买家1在拍卖期间执行取款操作", async () => {
         const {auction,initAuctionId,bidder1} =await networkHelpers.loadFixture(deployMetaNFTAuctionFixture);
-        await expect(auction.connect(bidder1).withdraw(initAuctionId)).to.be.rejectedWith("Auction not ended");
+        await expect(auction.connect(bidder1).withdraw(initAuctionId)).to.be.revertedWith("Auction not ended");
     });
 
 })
