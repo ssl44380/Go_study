@@ -1,4 +1,33 @@
+ 
+
+
+
+waffle
+
+evn-bn
+
+JWT  redis  mysql  kafka
+
+go-zreo   go-cline  go-descride 
+
+go 开发 C    L   D 分层 
+
+并发查询提高速度 利用 go 的协程加锁
+
+异步拿数据
+
+![image-20261012173724251](./nft 拍卖场合约.assets/image-20261012173724251.png)
+
+
+
+
+
+
+
+
+
 # NFT 交易市场项目（EasySwap）掌握程度测试卷
+
 考试说明 ：共 6 部分、50 题，覆盖项目全部模块。建议用时 120 分钟，闭卷作答。
 
 ## 第一部分：项目总体架构（第 1–6 题）
@@ -79,3 +108,4 @@
 1. 从零跑通项目：列出完整命令序列（MySQL/Redis → 建表 → 部署合约 → 三份 config.toml → 启动 Sync 与 Backend），并描述验证成功的标志。
 2. 基于`TestEasySwap.js` 写 Hardhat 用例：挂单后加价编辑、再出价成交，断言卖家 ETH 增量正确扣除了协议费。
 3. 为`EasySwapOrderBook` 增加“批量取消订单”函数，说明需考虑的重入、gas 上限与事件顺序问题。
+
