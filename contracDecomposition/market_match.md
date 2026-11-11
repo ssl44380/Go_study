@@ -476,6 +476,91 @@ sequenceDiagram
 
 
 
+### 订单结构体
+
+~~~
+type Order struct {
+	SeqId          int64
+	UserId         int64
+	OrderId        int64
+	BuyOrSell      OrderBuyOrSell   // 买/卖方向
+	Type           OrderType        // LIMIT / MARKET / FOK / IOC
+	State          OrderState       // 订单当前状态（Submitted、Filled、SelfTradeDecreased…）
+	Price          decimal.Decimal
+	UnfilledAmount decimal.Decimal  // 剩余还能成交的数量
+	CircuitRate    decimal.Decimal  // 滑点熔断保护比例
+	CreateAt       int64
+	Stp            SelfTradeWMType  // STP自成交策略 DC/CAD
+	PullTime       int64
+	Extra          string           // 批量撤单用
+	Taker          string
+	Maker          string
+}
+
+
+~~~
+
+### 订单结果结构体
+
+~~~
+type OrderResult struct {
+	OrderId        int64             `json:"order-id"`
+	UserId         int64             `json:"user-id"`
+	Role           string            `json:"role"`       // "taker" / "maker"
+	Price          *decimal.Decimal   `json:"price,omitempty"`
+	UnfilledAmount *decimal.Decimal   `json:"unfilled-amount,omitempty"` // taker剩余
+	FilledAmount   *decimal.Decimal   `json:"filled-amount,omitempty"`   // 本次变动量（成交/减量）
+	State          string            `json:"state,omitempty"`           // 本次事件标签
+	Taker          string            `json:"taker"`
+	Maker          string            `json:"maker"`
+}
+
+~~~
+
+
+
+撤单操作类型角色
+
+| 操作类型       | 返回的订单   | 角色设置 | 说明                            |
+| :------------- | :----------- | :------- | :------------------------------ |
+| **撤单操作**   | 被撤销的订单 | `taker`  | 撤单请求本身是主动操作（taker） |
+| **普通撮合**   | 对手方订单   | `maker`  | 对手方是被动等待成交（maker）   |
+| **自成交处理** | 对手方订单   | `maker`  | 对手方是被动方（maker）         |
+
+**关键理解点：**
+
+- `Role` 字段表示的是**操作本身的角色**，而不是被处理订单的原始角色
+- 撤单是一个"主动"操作，所以角色是 "taker"
+- 撮合是一个"被动"等待成交的过程，所以角色是 "maker"
+- 自成交处理虽然涉及取消订单，但它仍然是基于对手方订单的处理，所以返回的角色是 "maker"
+
+~~~
+示例：
+// 撤单操作中
+results = append(results,
+    &OrderResult{
+        OrderId:        targetOrder.OrderId,  // 被撤销的订单ID
+        Role:           "taker",              // 撤单请求的角色
+        UnfilledAmount: &targetOrder.UnfilledAmount,
+        State:          state,                // 撤单后的状态
+        UserId:         order.UserId,         // 撤单请求的用户
+        Taker:          order.Taker,          // 撤单请求的Taker标识
+        Maker:          order.Maker,          // 撤单请求的Maker标识
+    })
+    
+// 正常撮合/自成交
+return &OrderResult{
+    OrderId:      oppoOrder.OrderId,
+    Role:         "maker",  // ✅ 撮合对手方角色是 maker
+    FilledAmount: &matchAmount,
+    // ...
+}
+~~~
+
+
+
+
+
 
 
 ### 订单状态
