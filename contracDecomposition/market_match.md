@@ -277,6 +277,69 @@ flowchart TB
 5. 撮合结果 序列化为 json 字符串
 6. 定时将一批序列化订单结构体信息及成交结果发送给行情通道中，将序列化交易结果发从给持久化数据库和订阅客户端，定时保存并上传新的快照
 
+## 订单簿数据
+
+本项目中订单簿是根据价格优先和 seqid（从小到大）优先执行订单撮合顺序的排序
+
+底层的二叉树使用了红黑树排序
+
+### 红黑树的比较器
+
+红黑树使用必须有比较器，以下是红黑树比较器实现逻辑
+
+其中-1 代表插入左子节点，1 代表插入右子节点，0 表示重复不插入
+
+~~~go
+func Comparator(a, b interface{}) int {
+	orderA := a.(*Order)
+	orderB := b.(*Order)
+
+	if orderA.BuyOrSell == Buy {
+		switch {
+		case orderA.Price.GreaterThan(orderB.Price) ||
+			(orderA.Price.Equal(orderB.Price) && orderA.SeqId < orderB.SeqId):
+			return -1
+		case orderA.SeqId == orderB.SeqId:
+			return 0
+		default:
+			return 1
+		}
+	} else {
+		switch {
+		case orderA.Price.LessThan(orderB.Price) ||
+			(orderA.Price.Equal(orderB.Price) && orderA.SeqId < orderB.SeqId):
+			return -1
+		case orderA.SeqId == orderB.SeqId:
+			return 0
+		default:
+			return 1
+		}
+	}
+}
+~~~
+
+### 比较器代码详解
+
+本项目红黑树中每个节点的 key：**整个 Order 对象就是 Key，但实际比较的是 (Price, SeqId) 组合，同时还会用到订单状态是卖单还是买单**
+
+买树和卖树的最优成交价都是最左子节点（非 nil 节点），即该左子节点是整个树中沿着左支一直走，能拿到的最后一个值
+
+对于**买单**来说，**系统优先成交的是购入价最高的单且购入价最高且 seqid 越小的单**，所以这种单是最优对手单，被放在树最左侧
+
+对于**卖单**来说，**系统优先成交的是出售价最低的单且购入价最高且 seqid 越小的单**，所以这种单是最优对手单，被放在树最左侧
+
+代码运行逻辑：
+
+1. 获得两个单，其中 A 单是待入树的单，B 单是红黑树中原有的节点上挂的单
+2. 如果 A 单是买单，则执行
+   1. 如果 **A 单价格> B 单价格**或者 **（A 单价格等于 B 单且 A 单 seqid<B 单 seqid）**，return -1
+   2. 如果 **A 单 seqid=B 单 seqid**，return 0
+   3. 默认执行，return 1
+3. 否则，表示 A 单是卖单，执行
+   1. 如果 **A 单价格< B 单 价格** 或者 **（A 单价格等于 B 单且 A 单 seqid<B 单 seqid）**，return -1
+   2. 如果 **A 单 seqid=B 单 seqid**，return 0
+   3. 默认执行，return 1
+
 ## 订单撮合流程
 
 ### 订单撮合流程图
@@ -340,7 +403,7 @@ flowchart TB
 
 ```
 
-
+什么数据结构
 
 ~~~mermaid
 
@@ -430,6 +493,8 @@ sequenceDiagram
 | selfTradeDecreaseState      | self-trade-decreased        | **自成交减量（DC），还有余量**STP-DC 模式，同用户订单碰撞，不真实成交，只扣减一部分余量，订单还有剩余，继续留在簿 / 继续撮合。 | DC 分支，maker 扣一部分、还剩余量留在簿                      |
 | selfTradePartialCancelState | self-trade-partial-canceled | **自成交减量后余量耗尽，订单结束**DC 自成交减量扣完之后，余量归零，订单生命周期结束。对应你 `stOrderState()` 流转目标态。 | DC：taker 或者 maker 被 DC 扣干净了                          |
 | selfTradeCancelState        | self-trade-canceled         | **自成交直接取消（CB 模式）**STP-CB：同用户碰撞，两边直接取消，不成交、不减量，直接作废。 | CB 策略，碰撞后双向取消                                      |
+|                             | Error                       | 异常错误，程序异常、内部未知错误                             |                                                              |
+|                             | SystemCanceled              | **系统撤单**：系统后台触发的撤销（比如风控、停盘、过期、强平），区别于用户主动撤单 |                                                              |
 
 **区分点**：
 
@@ -446,6 +511,32 @@ sequenceDiagram
 **precision-canceled** 
 
 和普通 cancel 完全不一样：它不是撤单，是**订单进来撮合的时候，前置校验就判定买不起最小单位，直接作废**，订单从来没有进订单簿。
+
+### 订单状态流转
+
+~~~
+创建订单 → Submitted
+    ↓
+┌──────────────────────────────────────┐
+│  撮合处理                             │
+├──────────────────────────────────────┤
+│                                      │
+├─ 完全成交 ─────────────────────────→ Filled
+│                                      │
+├─ 部分成交 + 撤单 ─────────────────→ PartialCanceled
+│                                      │
+├─ 未成交 + 撤单 ───────────────────→ Canceled
+│                                      │
+├─ 自成交触发 ─────────────────────→ SelfTradeCanceled
+│                                      │
+├─ 熔断机制触发 ───────────────────→ CircuitCanceled
+│                                      │
+├─ 系统撤单 ────────────────────────→ SystemCanceled
+│                                      │
+└─ 精度问题 ────────────────────────→ PrecisionCanceled
+~~~
+
+
 
 ### 订单分类
 
@@ -503,41 +594,15 @@ flowchart TB
 
 订单流转过程：
 
-1. 检查 taker 状态是否为已成交，自撤销，部分自撤销，append(results, finalizeTaker(order))，break
-2. 如果不是，取对手单
-3. 如果对手单不存在，或者不匹配，则将该订单挂到订单簿中，append(results, finalizeTaker(order))，break
-4. 否则执行撮合，获得撮合结果
-5. 如果撮合结果为 nil，append(results, tmpOrderResult)
-6. 否则，continue（这个场景适用于匹配到的对手单也是自己发起的，按照自成交策略，返回空）
-7. 检查对手单状态是否为完全成交，自撤销，部分自撤销，如果是则下架该maker 单
-8. 同时检查如果对手单状态是完成成交或者部分成交，则将对手单的价格设置为返回值中的价格
-
-代码实现：
-
-~~~
-/* @notion 撮合限价单
-* @param  order  输入 taker 订单
-* @return price  撮合价格
-* @return results  撮合成功的订单列表
-*/
-func (book *OrderBook) matchLimit(order *Order) (price decimal.Decimal, results []*OrderResult) 
-进入自循环
-首先检查taker订单状态，是否已成交，自撤销，部分自撤单。如果是，将结果加入到最终 results 订单列表中，返回结果
-	如果不是，找到最合适的对手单
-	检查对手单是否存在，对手单和 taker 单是否匹配
-		如果不匹配或者没有对手单将限价单加入挂单队列中，并将结果加入到results列表中，中断循环
-		如果匹配，执行撮合
-			如果撮合结果不等于 nil，将撮合结果加入到results列表中
-			如果结果为 nil，则跳出循环，继续执行上述过程
-		检查对手单状态是否已经成交完毕，是否有自撤单，时候有部分撤单，
-			将maker 单从队列中删除掉
-		如果对手单是成交，或者部分成交，将成交价设置为基price
-
-
-
-~~~
-
-
+1. 进入自循环
+2. 检查 taker 状态是否为已成交，自撤销，部分自撤销，append(results, finalizeTaker(order))，break
+3. 如果不是，取对手单
+   1. 如果对手单不存在，或者不匹配，则将该订单挂到订单簿中（挂单价为限价单预期成交价），append(results, finalizeTaker(order))，break
+   2. 否则执行撮合，获得撮合结果
+      1. 如果撮合结果为 nil，append(results, tmpOrderResult)
+      2. 否则，continue（这个场景适用于匹配到的对手单也是自己发起的，按照自成交策略，返回空）
+      3. 检查对手单状态是否为完全成交，自撤销，部分自撤销，如果是则下架该maker 单
+      4. 同时检查如果对手单状态是完全成交或者部分成交，则将对手单的价格设置为返回值中的价格
 
 #### 市价单
 
@@ -608,34 +673,36 @@ flowchart TB
     style DEQUEUE fill:#9c27b0,color:#fff,stroke:#7b1fa2,stroke-width:3px
 ~~~
 
-
-
 订单流转过程讲解：
 
-1. 进入自循环
-2. 判断taker 单是否为已成交，自成交部分，自撤销，如果是停止撮合并将结果finalizeTaker返回到撮合结果results
-3. 如果不是，去拿对手单
-4. 没有拿到对手单，停止撮合并将结果finalizeTaker返回到撮合结果results
-5. 拿到对手单，判断对手单的成交价是否超过了熔断件
-6. 超过熔断价，停止撮合并将结果finalizeTaker返回到撮合结果results 并标注撮合订单状态为熔断失败撤销
-7. 执行撮合
-8. 如果撮合结果不为 nil，将结果 tmpOrderResult 添加到results
-9. 如果结果为 nil，判断是否是精度原因，如果是则停止撮合并将结果finalizeTaker(order.SetState(PrecisionCanceled)))返回到撮合结果results
-10. 检查对手单状态，是否为完全成交，自成交部分，自成交撤销
-11. 如果是下架该对手单，并验证该对手单是否完全成交，如果是怎将对手单的价格作为返回值 返回，继续进行循环
-12. 如果是部分成交，则将成交价作为价格返回值返回，同时检查 taker 订单状态
-13. 如果 taker 状态为SelfTradePartialCanceled，则append(results, finalizeTaker(order.SetState(SelfTradePartialCanceled)))
-14. 如果 taker 状态为SelfTradeCanceled，则append(results, finalizeTaker(order.SetState(SelfTradeCanceled)))
-15. 如果 taker 状态为完全成交，则append(results, finalizeTaker(order.SetState(Filled)))，不是完成成交，继续 continue
-16. 否则 brake
+代码运行逻辑：
 
-
-
-
+1. 开启自循环
+2. 判断 taker 订单状态是否为已成交，自撤销，部分自撤销，如果是则append(results, finalizeTaker(order))并 break
+3. 取对手单，如果没有对手单append(results, finalizeTaker(order.SetState(Canceled)))
+4. 如果有对手单，
+   1. 如果成交的结果列表长度大于0，即第一笔交易存在且 第一笔成交价\*（1-takerfok.CircuitRate）>=oppoOrder.Price或第一笔成交价\*（1+takerfok.CircuitRate）<=oppoOrder.Price，则 append(results, finalizeTaker(order.SetState(CircuitCanceled))执行熔断并 break 。目的是为了保护第一笔交易和第二笔交易存在巨大的滑点，但是此时 fok 订单会产生部分成交的情况。这种情况和标准的 fok 不符合
+   2. 继续执行撮合
+      1. 撮合结果tmpOrderResult不等于 nil，成交下单，results = append(results, tmpOrderResult)
+      2. 撮合结果tmpOrderResult等于 nil（可能是自成交），判断taker 单状态是否为PrecisionCanceled，
+         1. 如果是append(results,inalizeTaker(order.SetState(PrecisionCanceled) 并break
+         2. 不是，继续循环执行撮合
+      3. 对手单是完全成交或者自撤销或者部分自撤销，
+         1. 是下架该对手单，
+         2. 如果是完全成交则将对手单价格赋值给返回的价格
+         3. continue 循环匹配
+      4. 对手单不是完全成交或者自撤销或者部分自撤销
+         1. 如果对手单是部分自成交，则将价格赋值给返回的价格
+         2. 如果taker 单是自成交部分撤销，append(results, finalizeTaker(order.SetState(SelfTradePartialCanceled)))
+         3. 如果taker 单是自撤销，append(results, finalizeTaker(order.SetState(SelfTradeCanceled)))
+         4. 如果 taker 单是完全成交，append(results, finalizeTaker(order.SetState(Filled)))，否则continue
+         5. break
 
 #### FOK
 
 只能在一笔交易中全部成交，或者全部不成交
+
+预检-撮合成功是原子性的
 
 ~~~mermaid
 
@@ -698,27 +765,59 @@ flowchart TB
 
 代码运行逻辑：
 
-1. 首先执行预检，
-2. 判断taker 单是否可以完全成交，如果可以则继续进行撮合，如果不可以直接 return
-3. 开启自循环
-4. 判断 taker 订单状态是否为已成交，自撤销，部分自撤销，如果是则append(results, finalizeTaker(order))并 break
-5. 取对手单，如果没有对手单append(results, finalizeTaker(order.SetState(Canceled)))
-6. 如果有对手单，先执行熔断判断，如果熔断，则append(results, finalizeTaker(order.SetState(CircuitCanceled)))，break
-7. 没有熔断，则执行撮合，
-8. 撮合结果不等于 nil，成交下单，results = append(results, tmpOrderResult)
-9. 撮合结果为 nil，首先判断如果是精度原因则执行append(results, finalizeTaker(order.SetState(PrecisionCanceled)))，break
-10. 如果不是，则可能为自成交，continue
-11. 判读对手单是否完全成交或者自撤销或者部分自撤销，如果是下架该对手单，如果是完全成交则将对手单价格赋值给返回的价格，continue
-12. 如果对手单是部分自成交，则将价格赋值给返回的价格
-13. 检查 taker 订单的状态
-14. 如果是SelfTradePartialCanceled，则append(results, finalizeTaker(order.SetState(SelfTradePartialCanceled)))，break
-15. 如果是SelfTradeCanceled，则append(results, finalizeTaker(order.SetState(SelfTradeCanceled)))，break
-16. 否则则判断 taker 是否Filled，则 append(results, finalizeTaker(order.SetState(Filled)))，break
-17. 如果不是Filled 则continue
+1. 首先执行预检，判断taker 单是否可以完全成交，如果可以则继续进行撮合，如果不可以直接 return
+   1. 确定 takaer 是卖单还是买单
+   2. 卖单：拿买树，进入循环
+      1. 取出第一个订单order，
+      2. 如果开启订单保护且fokOrder.Price*（1-CircuitRate）>=order.Price，超出范围，return   false, CircuitCanceled
+      3. 如果订单maker 价格大于等于 takerfok 价格，
+         1. 累加 maker 的UnfilledAmount，
+         2. 校验maker 的UnfilledAmount>=takerfok的UnfilledAmount 
+            1. 校验成功 return true, Filled
+            2. 校验失败，执行循环
+         3. 检验失败 return false, Canceled
+   3. 买单：拿卖树，进入循环
+      1. 取出第一个订单order，
+         1. 如果开启订单保护且fokOrder.Price*（1+CircuitRate）<=order.Price，超出范围，return   false, CircuitCanceled
+         2. 如果订单maker 价格大于等于 takerfok 价格，
+            1. 累加 maker 的UnfilledAmount，
+            2. 校验maker 的UnfilledAmount>=takerfok的UnfilledAmount 
+               1. 校验成功 return true, Filled
+               2. 校验失败，执行循环
+            3. 检验失败 return false, Canceled
+2. 开启自循环
+3. 判断 taker 订单状态是否为已成交，自撤销，部分自撤销，如果是则append(results, finalizeTaker(order))并 break
+4. 取对手单，如果没有对手单append(results, finalizeTaker(order.SetState(Canceled)))
+5. 如果有对手单，
+   1. 如果成交的结果列表长度大于0，即第一笔交易存在且 第一笔成交价\*（1-takerfok.CircuitRate）>=oppoOrder.Price或第一笔成交价\*（1+takerfok.CircuitRate）<=oppoOrder.Price，则 append(results, finalizeTaker(order.SetState(CircuitCanceled))执行熔断并 break 。目的是为了保护第一笔交易和第二笔交易存在巨大的滑点，但是此时 fok 订单会产生部分成交的情况。这种情况和标准的 fok 不符合，**这个机制应该是市价单才有的机制**，存疑
+   2. 继续执行撮合
+      1. 撮合结果tmpOrderResult不等于 nil，成交下单，results = append(results, tmpOrderResult)
+      2. 撮合结果tmpOrderResult等于 nil（可能是自成交），判断taker 单状态是否为PrecisionCanceled，
+         1. 如果是append(results,inalizeTaker(order.SetState(PrecisionCanceled) 并break
+         2. 不是，继续循环执行撮合
+      3. 对手单是完全成交或者自撤销或者部分自撤销，
+         1. 是下架该对手单，
+         2. 如果是完全成交则将对手单价格赋值给返回的价格
+         3. continue 循环匹配
+      4. 对手单不是完全成交或者自撤销或者部分自撤销
+         1. 如果对手单是部分自成交，则将价格赋值给返回的价格
+         2. 如果taker 单是自成交部分撤销，append(results, finalizeTaker(order.SetState(SelfTradePartialCanceled)))
+         3. 如果taker 单是自撤销，append(results, finalizeTaker(order.SetState(SelfTradeCanceled)))
+         4. 如果 taker 单是完全成交，append(results, finalizeTaker(order.SetState(Filled)))，否则continue
+         5. break
 
 #### IOC
 
 立刻成交，能成交多少，就成交多少，剩下没有成交成功的原路返回
+
+代码运行逻辑：
+
+1. 进入自循环
+2. 如果order 已经完全成交，则append(results, finalizeTaker(order))  break
+3. 否则，从订单簿中取出对手单
+   1. 如果有对手单位 nil，或撮合价格不匹配，则append(results, finalizeTaker(order)) break
+   2. 否则append(results, matchOrder(book, order, oppoOrder))
+      1. 如果对手单全部成交，下架对手单
 
 #### Cancel
 
@@ -726,9 +825,56 @@ flowchart TB
 
 执行流程：
 
-1. 取对应的订单
-2. 如果可以取到订单，则撤销剩余量，并修改订单状态
-3. 如果取不到订单，返回订单状态，撤单失败
+1. 取对应的订单targetOrder
+   1. targetOrder 不为 nil，
+      1. 如果订单状态Submitted 变为canceledState
+      2. 如果订单状态PartialFilled 变为partialCancelState
+      3. 如果订单状态Filled 变为filledState
+      4. 如果订单状态SelfTradeDecreased 变为partialCancelState
+      5. 返回订单状态
+2. 如果取不到订单，返回订单状态failedState
+
+##### 撤单影响性校验
+
+校验余额，确保用户有足够的余额
+
+校验数量和价格，确保订单参数合理
+
+校验订单状态，对特定状态的订单进行撤单操作
+
+订单存在性校验，每次撤单前都需要验证订单有没有在订单簿中
+
+##### 核心逻辑
+
+1. **先检查订单是否存在**：`book.Find(order.OrderId)` - 如果不在订单簿中，返回 `failedState`
+2. **根据当前状态转换**：
+   - 未成交订单 → 完全撤销
+   - 部分成交订单 → 部分撤销（保留已成交部分）
+   - 完全成交订单 → 保持成交状态（实际上撤单无效）
+3. **从订单簿移除**：使用 `book.Dequeue(order.OrderId)` 将订单从队列中移除
+
+##### 允许撤单的状态
+
+| 状态                   | 说明         | 撤单后状态           | 是否允许撤单                       |
+| :--------------------- | :----------- | :------------------- | :--------------------------------- |
+| **Submitted**          | 初始挂单状态 | `canceledState`      | ✅ **允许**                         |
+| **PartialFilled**      | 部分成交     | `partialCancelState` | ✅ **允许**                         |
+| **Filled**             | 完全成交     | `filledState`        | ✅ **允许**（返回成功但无实际撤销） |
+| **SelfTradeDecreased** | 自成交减少   | `partialCancelState` | ✅ **允许**                         |
+
+##### 不允许撤单的状态：
+
+| 状态                         | 说明           | 为何不允许撤单               |
+| :--------------------------- | :------------- | :--------------------------- |
+| **Canceled**                 | 已撤单         | 已经是撤单状态，无法再次撤单 |
+| **PartialCanceled**          | 部分撤单       | 已经是撤单状态，无法再次撤单 |
+| **Failed**                   | 失败           | 订单处理失败，不在订单簿中   |
+| **Error**                    | 错误           | 订单出错，不在订单簿中       |
+| **CircuitCanceled**          | 熔断撤单       | 由熔断机制触发，已处理       |
+| **SystemCanceled**           | 系统撤单       | 由系统触发，已处理           |
+| **SelfTradeCanceled**        | 自成交撤单     | 由自成交保护机制处理         |
+| **SelfTradePartialCanceled** | 自成交部分撤单 | 由自成交保护机制处理         |
+| **PrecisionCanceled**        | 精度问题撤单   | 由精度校验处理               |
 
 #### SystemCancel
 
@@ -768,31 +914,33 @@ flowchart TB
 
 执行流程：
 
-1. 定期检查过期的订单
-2. 每查到一个过期订单就撤销一个过期订单
+1. 取对应的订单targetOrder
+   1. targetOrder 不为 nil，
+      1. 如果订单状态Submitted 变为canceledState
+      2. 如果订单状态PartialFilled 变为partialCancelState
+      3. 如果订单状态Filled 变为filledState
+      4. 如果订单状态SelfTradeDecreased 变为partialCancelState
+      5. 返回订单状态
+2. 如果取不到订单，返回订单状态failedState
+
+
 
 #### BatchCancel
 
 批量撤销订单
 
-~~~
-/*
-* @notion 批量撤销订单
-* @param 订单结构体
-* @return price 撤单价格
-* @return results 撤单的价格指针
-*/
-func (book *OrderBook) matchBatchCancel(order *Order) (price decimal.Decimal, results []*OrderResult) 
-~~~
-
 执行流程：
 
-1. 将需要批量撤销的订单放入BatchCancelOrder 列表
-2. 反序列化
-3. 循环订单列表，如果该订单存在则下架该订单，并根据剩余量标记撤销状态
-4. 如果该订单不存在，则直接返回完全成交
-
-
+1. 将待清理的数据解压到列表中
+2. 遍历清理列表
+   1. 取对应的订单targetOrder
+      1. targetOrder 不为 nil，
+         1. 如果订单状态Submitted 变为canceledState
+         2. 如果订单状态PartialFilled 变为partialCancelState
+         3. 如果订单状态Filled 变为filledState
+         4. 如果订单状态SelfTradeDecreased 变为partialCancelState
+         5. 返回订单状态
+   2. 如果取不到订单，返回订单状态failedState
 
 #### 自成交策略
 
@@ -802,21 +950,79 @@ func (book *OrderBook) matchBatchCancel(order *Order) (price decimal.Decimal, re
 - CN：删除新单，新下单为买 2eth，旧单为卖 3eth，按照 CN 策略，执行后变为卖 3eth
 - CB：删除旧单，新下单为买 2eth，旧单为卖 3eth，按照 CB 策略，执行后变为卖单和买单都是 0eth
 
+### 自成交逻辑
+
+#### 基于基础币
+
 代码执行流程：
 
-1. 如果订单没有指定自成交的逻辑，则执行 AST 策略
-2. 如果订单标注了CO，则变更 maker 的订单状态
-3. 如果订单标注了 CN，则变更 taker 的订单状态
-4. 如果订单标注了 CB，则变更双方的订单状态
-5. 如果订单标注了 DC，按照以下策略执行
-   1. 计算 taker 的orderAmount，和oppoOrder.UnfilledAmount 取最小值matchAmount
-   2. 计算最小值需要的资金量matchCashAmount
-   3. 安全判断：matchCashAmount 是否大于order.UnfilledAmount或者matchAmount 是否大于oppoOrder.UnfilledAmount 如果是报错Fatal。这种情况在计算失误的情况会产生
-   4. 如果taker 和 maker 的数量是 Amount 一致，则判断 taker 的CashAmount 是否有剩余，如果有剩余则将剩余的CashAmount 挂一个新单，原来的taker 和 maker 都变更状态
-   5. 如果 taker 的Amount 大于oppoOrder的UnfilledAmount，则更新order.UnfilledAmount，变更对手单状态，变更量为order.UnfilledAmount=Amount-oppoOrder.UnfilledAmount
-   6. 如果 taker的Amount 小于oppoOrder的UnfilledAmount，则变更oppoOrder.UnfilledAmount和状态，变更量为order.UnfilledAmount=Amount-oppoOrder.UnfilledAmount
+1. 如果taker 单自成交模式为 CB
+   1.  分别标记taker 单，maker 单，以及订单状态
+   2. return OrderResult
+2. 否则判断自成交模式为 CO
+   1. 分别标记taker 单，maker 单，以及订单状态
+   2. return OrderResult
+3. 否则判断为 CN
+   1.  taker 单，状态标记为自撤销或自部分撤销，返回 nil
+4. 否则，走 DC 模式
+   1. 从 maker 和 taker 的未成交量中获取最小值为matchAmount
+   2. 如果 taker 的未成交量=maker 的未成交量（走 CB 模式）
+      1.  分别标记taker 单，maker 单，以及订单状态
+      2. return OrderResult
+   3. 否则判断 taker 未成交量>maker 未成交量
+      1. order 未成交量-=matchAmount
+      2. 分别标记taker 单，maker 单，以及订单状态
+      3. return OrderResult
+   4. 否则（ taker 未成交量<maker 未成交量）
+      1. 分别标记taker 单，maker 单，以及订单状态
+      2. maker 未成交量-=matchAmount
+      3. return OrderResult
 
+#### 基于报价币
 
+代码执行流程：
+
+1. 如果taker 单自成交模式为 CB
+   1.  分别标记taker 单，maker 单，以及订单状态
+   2. return OrderResult
+2. 否则判断自成交模式为 CO
+   1. 分别标记taker 单，maker 单，以及订单状态
+   2. return OrderResult
+3. 否则判断为 CN
+   1.  taker 单，状态标记为自撤销或自部分撤销，return   nil
+4. 否则，走 DC 模式
+   1. 计算orderAmount （即taker 未成交量/最小售价）即剩余usdc 可购多少 eth
+   2. 根据orderAmount 和 maker 未成交量，取最小值为matchAmount
+   3. 按照matchAmount *maker 出售单价计算matchCashAmount
+   4. 如果matchCashAmount>taker 未成交量（剩余的 usdc）或者orderAmount>maker 未成交量，直接 Fatal
+   5. 如果 taker 的未成交量=maker 的未成交量（走 CB 模式）
+      1. 如果taker未成交量>matchCashAmount
+         1. taker未成交量-=matchCashAmount
+         2. 分别标记taker 单，maker 单，以及订单状态
+         3. return OrderResult
+      2. 分别标记taker 单，maker 单，以及订单状态（ 走 CB 模式）
+      3. return OrderResult
+   6. 否则判断 orderAmount 未成交量>maker 未成交量
+      1. order 未成交量-=matchCashAmount
+      2. 分别标记taker 单，maker 单，以及订单状态
+      3. return OrderResult
+   7. 否则（ taker 未成交量<maker 未成交量）
+      1. 分别标记taker 单，maker 单，以及订单状态
+      2. maker 未成交量-=matchAmount
+      3. return OrderResult
+
+### 撮合订单流程
+
+本项目的撮合过程中，只有市价买单可以通过 usdc 发起交易获取 eth
+
+市价卖单，限价单，fok，ioc 只能通过 eth 交易
+
+实际交易中，买单都是用 usdc 换 eth，卖单都是用 eth 换 usdc
+
+代码流程：
+
+1. 如果order.sql （taker 单）小于等于 oppoOrder.SeqId（从订单簿中拿到的订单），报错
+2. 根据订单类型为限价单，市价单，fok，ioc 走不同的撮合流程
 
 ### 订单匹配规则
 
@@ -836,21 +1042,31 @@ func (book *OrderBook) matchBatchCancel(order *Order) (price decimal.Decimal, re
 
 1. 获取 taker 和 maker 中最小的UnfilledAmount 为matchAmount
 2. 判断是否为自成交且 STP>0
-3. 如果为真则根据自成交的逻辑执行交易
-4. 如果为假则按照正常的交易执行，扣减 taker 和 maker 中的matchAmount
-5. 返回匹配好的值
+   1. 如果判断结果为真，则根据自成交的逻辑执行交易
+   2. 计算matchAmount 为taker 和 maker 中 amount 的最小值
+   3. 否则按照正常的交易执行，扣减 taker 和 maker 中的matchAmount
+      1. 如果matchAmount>taker 未成交量则Fatal
+      2. taker 的未成交量-=matchAmount
+      3. 如果 taker 未成交量=0 标记 taker 成交，否则标记 taker 部分成交
+   4. 返回匹配好的值
 
-#### 基于金额匹配（成交币 usdc 或其他）
+#### 基于金额匹配（报价币 usdc 或其他）
 
 适用场景只有市价单中买单，即用 usdc 购买 eth，代码运行逻辑为
 
-1. 获取档位中最小的档位
-2. 判断购买价格是否比最小档位的价格还要小，如果是 return
-3. 判断是否为自成交且 STP>0，如果是则执行自成交逻辑
-4. 根据 taker 的资金计算对应 order.amount，从 taker 和 maker 的 amount 中选出最小的
-5. 根据最小的amount 算出 taker 购买需要花费的资金matchCashAmount
-6. 判断计算出来的amount大于 maker.amount或者matchCashAmount 大于order.UnfilledAmount 则 fatal
-7. 扣减 taker 和 maker 中的matchAmount，返回匹配好的值
+1. 获取对手盘中的最优对手单单价，并统一精度
+2. 如果对手盘价格大于 taker.UnfilledAmount（报价币余量），则设置 订单状态= PrecisionCanceled，return
+3. 如果 takerid 和 makerid 是一样的，且 STP>0 则 return  执行自成交策略
+4. 否则执行一下逻辑
+   1. 根据 taker 剩余资金量除以最佳对手单单价截断 0 并统一精度，计算出orderAmount，即 taker 的剩余资金可以购买多少基础币
+   2. 根据计算出的 taker 可购买的基础币以及对手单未成交的基础币，取两者的最小值matchAmount
+   3. 计算购买matchAmount 需要的matchCashAmount=matchAmount*对手单的单价
+   4. 如果matchAmount>对手单的未成交量，或者matchCashAmount>taker 单的UnfilledAmount，Fatal 报错。（这里是为了确保精度计算没有问题，因为计算过程中可能因为截断存在计算出错的情况，规避成交 eth 比对手单能够提供的 eth 还要错，或者成交需要的 usdc 大于taker 提供的 usdc）
+   5. 执行撮合，正常的交易执行，扣减 taker 和 maker 中的matchAmount
+      1. 如果matchAmount>taker 未成交量则Fatal
+      2. taker 的未成交量-=matchAmount
+      3. 如果 taker 未成交量=0 标记 taker 成交，否则标记 taker 部分成交
+   6. 返回匹配好的值
 
 ## 快照流程
 
@@ -1437,7 +1653,6 @@ func (L *L2quote) updateMarketDetailPriceCurDayVol24Hour(mr *match.MatchResult, 
 
 l2quote.L2quote on pkg.go.dev
 ~~~
-
 
 
 
